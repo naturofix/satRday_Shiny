@@ -1,0 +1,90 @@
+---
+title: "R_Markdown_Shiny"
+author: "Shaun Garnett"
+date: "17 February 2017"
+runtime: shiny
+output: html_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+library(southafricastats)
+library(dplyr)
+library(ggplot2)
+library(shiny)
+library(DT)
+library(tidyr)
+```
+
+
+```{r}
+head(population_zaf)
+totals = population_zaf %>%
+  filter(year == 2013) %>%
+  select(province,total)
+
+head(totals)
+
+compare_provinces <- mortality_zaf %>% 
+  left_join(totals) %>%
+  mutate(rate = deaths /total * 1e3) %>%
+  group_by(province, indicator) %>%
+  summarise(rate = mean(rate)) %>%
+  ungroup %>%
+  left_join(totals) %>%
+  spread(indicator,rate)
+
+head(compare_provinces)
+
+
+```
+
+
+```{r}
+ggplot(compare_provinces,
+       aes(`Tuberculosis (A15-A19)`,
+           `Human immunodeficiency virus [HIV] disease (B20-B24)`,
+           label = province)) + 
+  geom_point(aes(size = total),alpha = 0.8,colour = 'midnightblue') +
+  geom_text(vjust = 2.5) +
+  theme_minimal()
+```
+
+```{r}
+
+selectInput(inputId = 'x_axis',
+            label = 'Choose the x axis',
+            choices = colnames(compare_provinces[,3:20]),
+            selected = "Tuberculosis (A15-A19)")
+selectInput(inputId = 'y_axis',
+            label = 'Choose the y axis',
+            choices = colnames(compare_provinces[,3:20]),
+            selected = "Human immunodeficiency virus [HIV] disease (B20-B24)")
+```
+
+
+```{r} 
+selected_df <- reactive({
+  subset_df <- compare_provinces[,c(1,2,
+                                    which(colnames(compare_provinces) == input$x_axis),
+                                    which(colnames(compare_provinces) == input$y_axis))]
+  colnames(subset_df) <- c('province','total','x','y')
+  subset_df
+})
+```
+
+```{r}
+fillCol(height = 800,
+        renderPlot({
+  ggplot(selected_df(),
+       aes(x, y,
+           label = province)) + 
+  geom_point(aes(size = total),alpha = 0.8,colour = 'midnightblue') +
+  geom_text(vjust = 2.5) +
+  theme_minimal()
+  
+}, height = 800)
+)
+```
+
+

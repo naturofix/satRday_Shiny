@@ -1,0 +1,155 @@
+---
+title: "Flex Dashboard Example"
+runtime: shiny
+output: 
+  flexdashboard::flex_dashboard:
+    theme: lumen
+    orientation: columns
+    vertical_layout: fill
+    source_code : embed
+
+---
+
+```{r setup, include=FALSE}
+library(flexdashboard)
+library(southafricastats)
+library(dplyr)
+library(tidyr)
+library(ggplot2)
+library(leaflet)
+library(DT)
+
+#head(population_zaf)
+totals = population_zaf %>%
+  filter(year == 2013) %>%
+  select(province,total)
+
+#head(totals)
+
+
+compare_provinces <- mortality_zaf %>% 
+  left_join(totals) %>%
+  mutate(rate = deaths /total * 1e3) %>%
+  group_by(province, indicator) %>%
+  summarise(rate = mean(rate)) %>%
+  ungroup %>%
+  left_join(totals) %>%
+  spread(indicator,rate)
+
+#head(compare_provinces)
+
+
+selected_df <- reactive({
+  subset_df <- compare_provinces[,c(1,2,
+                                    which(colnames(compare_provinces) == input$x_axis),
+                                    which(colnames(compare_provinces) == input$y_axis))]
+  colnames(subset_df) <- c('province','total','x','y')
+  subset_df
+})
+
+selected_df_indicator <- reactive({
+  subset_df <- compare_provinces[,c(1,which(colnames(compare_provinces) == input$indicator))]
+  colnames(subset_df) <- c('province','indicator')
+  population_zaf %>%
+    filter(year == 2013) %>%
+    left_join(subset_df) %>%
+    mutate(indicator = indicator / sum(indicator, na.rm = TRUE))
+  #subset_df
+})
+
+scatterplot_df <- reactive({
+  subset_df <- compare_provinces[,c(1,2,
+                                    which(colnames(compare_provinces) == 'All causes'),
+                                    which(colnames(compare_provinces) == input$indicator))]
+  colnames(subset_df) <- c('province','total','x','y')
+  subset_df
+  #subset_df
+})
+
+mortality = mortality_zaf %>% filter(indicator != 'All causes' & indicator != 'Other natural causes')
+nc = mortality_zaf %>% filter(indicator == 'Other natural causes')
+
+
+```
+
+
+Column {.sidebar}
+====================================================
+
+The sidebar give us information about the plots, together with buttons that we might use the change the view of the data
+
+
+
+```{r}
+selectInput(inputId = 'indicator',
+            label = 'Choose a cause of death',
+            choices = unique(mortality_zaf$indicator),
+            selected = 'Diabetes mellitus (E10-E14)')
+            
+
+```
+
+
+Map {data-icon="fa-map-marker"}
+====================================================
+### Mortality Map
+
+```{r}
+renderLeaflet({
+  leaflet(selected_df_indicator()) %>%
+    addProviderTiles("CartoDB.Positron") %>%
+    addCircles(lng = ~longitude,
+               lat = ~latitude,
+               radius = ~sqrt(indicator) *3e5,
+               weight = 2.5,
+               color = "magenta",
+               popup = ~province)
+})
+```
+
+Comparing Provinces {data-icon="fa-list"}
+============================================
+
+### How does the selected mortality rate compare to the overall mortality rate
+
+
+```{r}
+renderPlot({
+  ggplot(scatterplot_df(),
+       aes(x, y,
+           label = province)) + 
+  geom_point(aes(size = total),alpha = 0.8,colour = 'midnightblue') +
+  geom_text(vjust = 2.5) +
+  theme_minimal()
+})
+```
+
+
+Changes in time {data-icon='fa-area-chart'}
+===========================================
+## How have the number of deaths changed over time
+
+```{r}
+renderPlot({
+       mortality_zaf %>%
+       filter(indicator %in% input$indicator) %>%
+       ggplot(aes(year,deaths,colour=province)) + 
+       geom_line(alpha = 0.8, size = 1.5) +
+       theme_minimal(base_size = 18) +
+    labs(x = NULL, y = "Number of Deaths")
+})
+```
+
+
+Table {data-icon='fa-table}
+===========================
+### Check out the data here
+
+```{r}
+renderDataTable({
+  datatable(mortality_zaf %>%
+       filter(indicator %in% input$indicator))
+})
+```
+
+
